@@ -33,17 +33,18 @@ app.get('/products', async (req, res) => {
 
 // POST a new product
 app.post('/products', async (req, res) => {
-  console.log(req.body); // DEBUG: log body
   const { name, image, price, description } = req.body;
   if (!name || !image || !price || !description) {
     return res.status(400).json({ error: 'Missing fields in request body' });
   }
   const query = 'INSERT INTO products (name, image, price, description) VALUES (?, ?, ?, ?)';
   try {
+    // Cast to ResultSetHeader to access insertId
     const [result] = await db.query(query, [name, image, price, description]);
+    const insertId = (result as mysql.ResultSetHeader).insertId; // Type cast for insertId
     res.status(201).json({
       message: 'Product added successfully',
-      productId: result.insertId
+      productId: insertId
     });
   } catch (err) {
     console.error('Error inserting product:', err);
@@ -63,8 +64,11 @@ app.put('/products/:id', async (req, res) => {
 
   const query = 'UPDATE products SET name = ?, image = ?, price = ?, description = ? WHERE id = ?';
   try {
+    // Cast to ResultSetHeader to access affectedRows
     const [result] = await db.query(query, [name, image, price, description, id]);
-    if (result.affectedRows === 0) {
+    const affectedRows = (result as mysql.ResultSetHeader).affectedRows; // Type cast for affectedRows
+
+    if (affectedRows === 0) {
       return res.status(404).json({ error: 'Product not found' });
     }
     res.json({
@@ -81,8 +85,11 @@ app.delete('/products/:id', async (req, res) => {
   const { id } = req.params;
   const query = 'DELETE FROM products WHERE id = ?';
   try {
+    // Cast to ResultSetHeader to access affectedRows
     const [result] = await db.query(query, [id]);
-    if (result.affectedRows === 0) {
+    const affectedRows = (result as mysql.ResultSetHeader).affectedRows; // Type cast for affectedRows
+
+    if (affectedRows === 0) {
       return res.status(404).json({ error: 'Product not found' });
     }
     res.json({
