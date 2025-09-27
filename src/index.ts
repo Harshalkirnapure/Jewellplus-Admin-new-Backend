@@ -1,5 +1,5 @@
 import express from 'express';
-import mysql from 'mysql2/promise';
+import { Pool } from 'pg';
 import cors from 'cors';
 
 const app = express();
@@ -10,21 +10,21 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Create a connection to the database using `mysql2/promise`
-const db = await mysql.createConnection({
+// Create a PostgreSQL connection pool
+const db = new Pool({
   host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASS || 'root',
-  database: process.env.DB_NAME || 'Shopdb'
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASS || '',
+  database: process.env.DB_NAME || 'Shopdb',
+  port: 5432,
+  ssl: { rejectUnauthorized: false }  // needed for Render PostgreSQL
 });
-
-console.log('Connected to MySQL Database!');
 
 // GET products
 app.get('/products', async (req, res) => {
   try {
-    const [results] = await db.query('SELECT * FROM products');
-    res.json(results);
+    const result = await db.query('SELECT * FROM products');
+    res.json(result.rows);
   } catch (err) {
     console.error('Error fetching products:', err);
     res.status(500).json({ error: 'Database query failed' });
@@ -37,14 +37,15 @@ app.post('/products', async (req, res) => {
   if (!name || !image || !price || !description) {
     return res.status(400).json({ error: 'Missing fields in request body' });
   }
-  const query = 'INSERT INTO products (name, image, price, description) VALUES (?, ?, ?, ?)';
+
   try {
-    // Cast to ResultSetHeader to access insertId
-    const [result] = await db.query(query, [name, image, price, description]);
-    const insertId = (result as mysql.ResultSetHeader).insertId; // Type cast for insertId
+    const result = await db.query(
+      'INSERT INTO products (name, image, price, description) VALUES ($1, $2, $3, $4) RETURNING id',
+      [name, image, price, description]
+    );
     res.status(201).json({
       message: 'Product added successfully',
-      productId: insertId
+      productId: result.rows[0].id
     });
   } catch (err) {
     console.error('Error inserting product:', err);
@@ -57,23 +58,21 @@ app.put('/products/:id', async (req, res) => {
   const { id } = req.params;
   const { name, image, price, description } = req.body;
 
-  // Optionally, you can validate fields here
   if (!name || !image || !price || !description) {
     return res.status(400).json({ error: 'Missing fields in request body' });
   }
 
-  const query = 'UPDATE products SET name = ?, image = ?, price = ?, description = ? WHERE id = ?';
   try {
-    // Cast to ResultSetHeader to access affectedRows
-    const [result] = await db.query(query, [name, image, price, description, id]);
-    const affectedRows = (result as mysql.ResultSetHeader).affectedRows; // Type cast for affectedRows
+    const result = await db.query(
+      'UPDATE products SET name = $1, image = $2, price = $3, description = $4 WHERE id = $5',
+      [name, image, price, description, id]
+    );
 
-    if (affectedRows === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Product not found' });
     }
-    res.json({
-      message: 'Product updated successfully'
-    });
+
+    res.json({ message: 'Product updated successfully' });
   } catch (err) {
     console.error('Error updating product:', err);
     res.status(500).json({ error: 'Database update failed' });
@@ -83,18 +82,15 @@ app.put('/products/:id', async (req, res) => {
 // DELETE a product by id
 app.delete('/products/:id', async (req, res) => {
   const { id } = req.params;
-  const query = 'DELETE FROM products WHERE id = ?';
-  try {
-    // Cast to ResultSetHeader to access affectedRows
-    const [result] = await db.query(query, [id]);
-    const affectedRows = (result as mysql.ResultSetHeader).affectedRows; // Type cast for affectedRows
 
-    if (affectedRows === 0) {
+  try {
+    const result = await db.query('DELETE FROM products WHERE id = $1', [id]);
+
+    if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Product not found' });
     }
-    res.json({
-      message: 'Product deleted successfully'
-    });
+
+    res.json({ message: 'Product deleted successfully' });
   } catch (err) {
     console.error('Error deleting product:', err);
     res.status(500).json({ error: 'Database delete failed' });
